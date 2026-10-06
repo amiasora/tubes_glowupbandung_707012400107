@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../models/riwayat_laporan_model.dart';
 import '../navigation/app_routes.dart';
 
 class Profil extends StatelessWidget {
@@ -7,6 +9,11 @@ class Profil extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final totalLaporan =
+        context.select<RiwayatLaporanModel, int>(
+      (model) => model.totalLaporan,
+    );
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -39,6 +46,33 @@ class Profil extends StatelessWidget {
 
           const SizedBox(height: 24),
 
+          Card(
+            child: ListTile(
+              leading: const Icon(
+                Icons.history,
+              ),
+              title: const Text(
+                'Laporan Terkonfirmasi',
+              ),
+              subtitle: const Text(
+                'Jumlah laporan yang tersimpan '
+                'pada riwayat.',
+              ),
+              trailing: Badge(
+                isLabelVisible:
+                    totalLaporan > 0,
+                label: Text(
+                  '$totalLaporan',
+                ),
+                child: const Icon(
+                  Icons.description_outlined,
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
@@ -48,8 +82,14 @@ class Profil extends StatelessWidget {
                   AppRoutes.riwayatLaporan,
                 );
               },
-              icon: const Icon(Icons.history),
-              label: const Text('Lihat Riwayat Laporan'),
+              icon:
+                  const Icon(Icons.history),
+              label: Text(
+                totalLaporan == 0
+                    ? 'Lihat Riwayat Laporan'
+                    : 'Lihat Riwayat Laporan '
+                        '($totalLaporan)',
+              ),
             ),
           ),
         ],

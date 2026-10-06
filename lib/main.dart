@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import 'models/riwayat_laporan_model.dart';
 import 'navigation/app_routes.dart';
 
 void main() {
-  runApp(const AplikasiGlowUpBandung());
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => RiwayatLaporanModel(),
+      child: const AplikasiGlowUpBandung(),
+    ),
+  );
 }
 
 class AplikasiGlowUpBandung extends StatelessWidget {
