@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'models/riwayat_laporan_model.dart';
+import 'model/form_laporan_model.dart';
+import 'model/riwayat_laporan_model.dart';
 import 'navigation/app_routes.dart';
 
 void main() {
   runApp(
-    ChangeNotifierProvider(
-      create: (context) => RiwayatLaporanModel(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) => RiwayatLaporanModel(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => FormLaporanModel(),
+        ),
+      ],
       child: const AplikasiGlowUpBandung(),
     ),
   );
