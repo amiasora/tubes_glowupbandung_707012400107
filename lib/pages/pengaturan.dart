@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../cubit/theme_cubit.dart';
 
 class Pengaturan extends StatelessWidget {
   const Pengaturan({super.key});
@@ -18,6 +21,29 @@ class Pengaturan extends StatelessWidget {
       ),
       body: ListView(
         children: [
+          BlocBuilder<ThemeCubit, ThemeMode>(
+            builder: (context, modeTema) {
+              final modeGelap = modeTema == ThemeMode.dark;
+
+              return SwitchListTile(
+                key: const ValueKey('sakelar-mode-gelap'),
+                secondary: Icon(
+                  modeGelap
+                      ? Icons.dark_mode_outlined
+                      : Icons.light_mode_outlined,
+                ),
+                value: modeGelap,
+                onChanged: (aktif) {
+                  context.read<ThemeCubit>().ubahModeGelap(aktif);
+                },
+                title: const Text('Mode gelap'),
+                subtitle: const Text(
+                  'Gunakan tampilan gelap pada seluruh aplikasi.',
+                ),
+              );
+            },
+          ),
+          const Divider(),
           SwitchListTile(
             value: true,
             onChanged: (_) {},
