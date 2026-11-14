@@ -1,0 +1,111 @@
+
+import 'package:flutter/material.dart';
+
+import '../db/database_helper.dart';
+import '../models/notifikasi_laporan.dart';
+import '../widgets/kerangka_warga.dart';
+import 'riwayat_laporan.dart';
+
+class NotifikasiWarga extends StatefulWidget {
+  const NotifikasiWarga({super.key, this.idWarga = 1});
+  final int idWarga;
+
+  @override
+  State<NotifikasiWarga> createState() => _NotifikasiWargaState();
+}
+
+class _NotifikasiWargaState extends State<NotifikasiWarga> {
+  List<NotifikasiLaporan> _daftar = [];
+  bool _memuat = true;
+  bool _membuka = false;
+  String? _galat;
+  int _nomorMuat = 0;
+
+  @override
+  void initState() { super.initState(); _muat(); }
+
+  Future<void> _muat() async {
+    final nomor = ++_nomorMuat;
+    setState(() { _memuat = true; _galat = null; });
+    try {
+      final daftar = await DatabaseHelper.instance.ambilNotifikasiWarga(widget.idWarga);
+      if (!mounted || nomor != _nomorMuat) return;
+      setState(() { _daftar = daftar; _memuat = false; });
+    } catch (_) {
+      if (!mounted || nomor != _nomorMuat) return;
+      setState(() {
+        _memuat = false; _galat = 'Notifikasi belum dapat dimuat. Coba muat ulang.';
+      });
+    }
+  }
+
+  Future<void> _buka(NotifikasiLaporan item) async {
+    if (_membuka) return;
+    setState(() => _membuka = true);
+    try {
+      final db = DatabaseHelper.instance;
+      final laporan = await db.ambilDetailLaporan(
+        idLaporan: item.idLaporan, idWarga: widget.idWarga);
+      if (laporan == null) throw StateError('Laporan tidak ditemukan.');
+      await db.tandaiNotifikasiDibaca(
+        idNotifikasi: item.idNotifikasi, idWarga: widget.idWarga);
+      if (!mounted) return;
+      await Navigator.push<void>(context, MaterialPageRoute(
+        builder: (_) => DetailLaporanTersimpan(
+          idLaporan: item.idLaporan, idWarga: widget.idWarga,
+        ),
+      ));
+      if (mounted) await _muat();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Pemberitahuan belum dapat dibuka. Coba lagi.'),
+      ));
+    } finally {
+      if (mounted) setState(() => _membuka = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => KerangkaWarga(
+    menuAktif: MenuWarga.notifikasi,
+    navigasiAktif: !_membuka,
+    onKembali: _muat,
+    child: KontenWarga(children: [
+      const JudulHalamanWarga(judul: 'Notifikasi Warga',
+        deskripsi: 'Pemberitahuan untuk laporan milik akun Anda.'),
+      if (_memuat) const LinearProgressIndicator()
+      else if (_galat != null) Text(_galat!)
+      else if (_daftar.isEmpty)
+        const Card(child: Padding(padding: EdgeInsets.all(18),
+          child: Text('Belum ada notifikasi untuk akun Anda.')))
+      else ..._daftar.map((item) => Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Card(child: InkWell(
+          borderRadius: BorderRadius.circular(5),
+          onTap: _membuka ? null : () => _buka(item),
+          child: Padding(padding: const EdgeInsets.all(18),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${item.judul} · ${item.sudahDibaca ? 'Dibaca' : 'Belum dibaca'}',
+                  style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text('${item.kodeLaporan} · ${waktuWibWarga(item.dibuatAtUtc)}',
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                const SizedBox(height: 6),
+                Text(item.ringkasan),
+                const SizedBox(height: 8),
+                Text(item.jenis == 'tanggapan' ? 'Buka tanggapan' : 'Buka detail',
+                  style: TextStyle(color: Theme.of(context).colorScheme.primary)),
+              ],
+            ),
+          ),
+        )),
+      )),
+      const SizedBox(height: 12),
+      Align(alignment: Alignment.centerLeft,
+        child: TextButton.icon(onPressed: _memuat || _membuka ? null : _muat,
+          icon: const Icon(Icons.refresh, size: 18), label: const Text('Muat ulang notifikasi'))),
+    ]),
+  );
+}

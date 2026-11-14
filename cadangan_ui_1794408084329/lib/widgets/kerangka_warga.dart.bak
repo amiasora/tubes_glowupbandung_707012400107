@@ -1,0 +1,237 @@
+
+import 'package:flutter/material.dart';
+
+import '../services/sesi_akun.dart';
+
+enum MenuWarga {
+  dashboard('Dashboard', '/'),
+  buatLaporan('Buat Laporan', '/buat-laporan'),
+  riwayat('Riwayat Laporan', '/riwayat-laporan'),
+  notifikasi('Notifikasi', '/notifikasi');
+
+  const MenuWarga(this.label, this.route);
+  final String label;
+  final String route;
+}
+
+class KerangkaWarga extends StatelessWidget {
+  const KerangkaWarga({
+    super.key,
+    required this.menuAktif,
+    required this.child,
+    this.navigasiAktif = true,
+    this.onKembali,
+  });
+
+  final MenuWarga menuAktif;
+  final Widget child;
+  final bool navigasiAktif;
+  final Future<void> Function()? onKembali;
+
+  @override
+  Widget build(BuildContext context) {
+    return KerangkaPeran(
+      peran: PeranAkun.warga,
+      ruteAktif: menuAktif.route,
+      menu: {for (final item in MenuWarga.values) item.route: item.label},
+      navigasiAktif: navigasiAktif,
+      onKembali: onKembali,
+      child: child,
+    );
+  }
+}
+
+class KerangkaPeran extends StatefulWidget {
+  const KerangkaPeran({
+    super.key,
+    required this.peran,
+    required this.ruteAktif,
+    required this.menu,
+    required this.child,
+    this.navigasiAktif = true,
+    this.onKembali,
+  });
+
+  final PeranAkun peran;
+  final String ruteAktif;
+  final Map<String, String> menu;
+  final Widget child;
+  final bool navigasiAktif;
+  final Future<void> Function()? onKembali;
+
+  @override
+  State<KerangkaPeran> createState() => _KerangkaPeranState();
+}
+
+class _KerangkaPeranState extends State<KerangkaPeran> {
+  bool _menuTerbuka = false;
+
+  Future<void> _buka(String rute) async {
+    if (!widget.navigasiAktif || rute == widget.ruteAktif) return;
+    setState(() => _menuTerbuka = false);
+    if (rute == '/') {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      return;
+    }
+    await Navigator.pushNamed<Object?>(context, rute);
+    if (!mounted) return;
+    await widget.onKembali?.call();
+  }
+
+  void _keluar() {
+    if (!widget.navigasiAktif) return;
+    SesiAkun.keluar();
+    Navigator.of(context, rootNavigator: true)
+        .pushNamedAndRemoveUntil<Object?>('/', (_) => false);
+  }
+
+  Widget _menu() {
+    final warna = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: widget.menu.entries.map((item) {
+        final aktif = item.key == widget.ruteAktif;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+          child: TextButton(
+            onPressed: widget.navigasiAktif ? () => _buka(item.key) : null,
+            style: TextButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+              foregroundColor: aktif ? warna.primary : warna.onSurfaceVariant,
+              backgroundColor: aktif ? warna.primaryContainer : null,
+              textStyle: TextStyle(
+                fontSize: 14,
+                fontWeight: aktif ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
+            child: Text(item.value),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final desktop = MediaQuery.sizeOf(context).width >= 900;
+    final skema = Theme.of(context).colorScheme;
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Material(
+              color: skema.surface,
+              child: Container(
+                height: 64,
+                padding: EdgeInsets.symmetric(horizontal: desktop ? 24 : 12),
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: skema.outlineVariant)),
+                ),
+                child: Row(
+                  children: [
+                    if (!desktop)
+                      IconButton(
+                        tooltip: 'Buka menu',
+                        onPressed: widget.navigasiAktif
+                            ? () => setState(() => _menuTerbuka = !_menuTerbuka)
+                            : null,
+                        icon: Icon(_menuTerbuka ? Icons.close : Icons.menu),
+                      ),
+                    Expanded(
+                      child: Text(
+                        'G Glow Up Bandung',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: skema.primary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Text(widget.peran.label, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: widget.navigasiAktif ? _keluar : null,
+                      child: const Text('Keluar'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (!desktop && _menuTerbuka)
+              Material(color: skema.surface, child: _menu()),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (desktop)
+                    SizedBox(
+                      width: 200,
+                      child: Material(
+                        color: skema.surface,
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.only(top: 22),
+                          child: _menu(),
+                        ),
+                      ),
+                    ),
+                  Expanded(child: widget.child),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class JudulHalamanWarga extends StatelessWidget {
+  const JudulHalamanWarga({super.key, required this.judul, this.deskripsi});
+  final String judul;
+  final String? deskripsi;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 22),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(judul, style: Theme.of(context).textTheme.headlineSmall),
+      if (deskripsi != null) ...[
+        const SizedBox(height: 8),
+        Text(deskripsi!, style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      ],
+    ]),
+  );
+}
+
+/// Konten vertikal tetap dapat digulir pada layar desktop dan ponsel.
+class KontenWarga extends StatelessWidget {
+  const KontenWarga({super.key, required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.topLeft,
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 1120),
+      child: ListView(
+        padding: EdgeInsets.all(MediaQuery.sizeOf(context).width >= 900 ? 28 : 18),
+        children: children,
+      ),
+    ),
+  );
+}
+
+String tanggalWarga(DateTime tanggal) =>
+    '${tanggal.day.toString().padLeft(2, '0')}/'
+    '${tanggal.month.toString().padLeft(2, '0')}/${tanggal.year}';
+
+String waktuWibWarga(DateTime utc) {
+  final wib = utc.toUtc().add(const Duration(hours: 7));
+  return '${tanggalWarga(wib)} '
+      '${wib.hour.toString().padLeft(2, '0')}:'
+      '${wib.minute.toString().padLeft(2, '0')} WIB';
+}

@@ -1,0 +1,370 @@
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+
+import '../db/database_helper.dart';
+import '../models/foto_laporan.dart';
+import '../models/klarifikasi_laporan.dart';
+import '../models/titik_laporan.dart';
+import '../services/layanan_foto.dart';
+import '../services/sesi_akun.dart';
+import '../widgets/kerangka_warga.dart';
+import 'pilih_lokasi_laporan.dart';
+
+class KlarifikasiWarga extends StatefulWidget {
+  const KlarifikasiWarga({
+    super.key,
+    required this.idLaporan,
+    required this.idWarga,
+    required this.idPermintaan,
+    required this.kode,
+    required this.permintaan,
+    required this.titikAwal,
+  });
+
+  final int idLaporan;
+  final int idWarga;
+  final int idPermintaan;
+  final String kode;
+  final String permintaan;
+  final TitikLaporan titikAwal;
+
+  @override
+  State<KlarifikasiWarga> createState() => _KlarifikasiWargaState();
+}
+
+class _KlarifikasiWargaState extends State<KlarifikasiWarga> {
+  final _penjelasan = TextEditingController();
+  final _patokan = TextEditingController();
+  final _foto = <FotoLaporan>[];
+  TitikLaporan? _titik;
+  String? _galat;
+  bool _memilihFoto = false;
+  bool _menyimpan = false;
+
+  @override
+  void dispose() {
+    _penjelasan.dispose();
+    _patokan.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pilihFoto() async {
+    if (_memilihFoto || _menyimpan || _foto.length >= 3) return;
+    setState(() {
+      _memilihFoto = true;
+      _galat = null;
+    });
+    try {
+      final pilihan = await const LayananFoto().pilihFoto(
+        kapasitasTersisa: 3 - _foto.length,
+      );
+      if (mounted) setState(() => _foto.addAll(pilihan));
+    } on FormatException catch (e) {
+      if (mounted) setState(() => _galat = e.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _galat = 'Foto belum bisa ditambahkan. Pilih ulang berkasnya.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _memilihFoto = false);
+    }
+  }
+
+  Future<void> _pilihTitik() async {
+    final titik = await Navigator.push<TitikLaporan>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            PilihLokasiLaporan(lokasiAwal: _titik ?? widget.titikAwal),
+      ),
+    );
+    if (!mounted || titik == null) return;
+    setState(() {
+      _titik = titik;
+      _galat = null;
+    });
+  }
+
+  Future<void> _simpan() async {
+    if (_menyimpan || _memilihFoto) return;
+    final akun = SesiAkun.aktif;
+    if (akun?.peran != PeranAkun.warga || akun?.id != widget.idWarga) {
+      setState(
+        () => _galat =
+            'Masuk sebagai pemilik laporan untuk mengirim klarifikasi.',
+      );
+      return;
+    }
+    final titik = _titik;
+    setState(() {
+      _menyimpan = true;
+      _galat = null;
+    });
+    try {
+      await DatabaseHelper.instance.simpanKlarifikasi(
+        idLaporan: widget.idLaporan,
+        idWarga: widget.idWarga,
+        idPermintaan: widget.idPermintaan,
+        penjelasan: _penjelasan.text,
+        foto: _foto,
+        lokasi: titik == null
+            ? null
+            : LokasiKlarifikasi.usulan(titik, _patokan.text),
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } on GalatKlarifikasi catch (e) {
+      if (mounted) setState(() => _galat = e.pesan);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _galat = 'Klarifikasi belum tersimpan. Coba kirim ulang.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _menyimpan = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final terkunci = _menyimpan || _memilihFoto;
+    final titik = _titik;
+    return PopScope(
+      canPop: !terkunci,
+      child: KerangkaWarga(
+        menuAktif: MenuWarga.riwayat,
+        navigasiAktif: !terkunci,
+        child: KontenWarga(
+          maxLebar: 930,
+          children: [
+            JudulHalamanWarga(
+              judul: 'Kirim Klarifikasi',
+              deskripsi: widget.kode,
+            ),
+            _KartuKlarifikasi(
+              judul: 'Permintaan Admin',
+              children: [
+                SelectableText(widget.permintaan),
+                const Text(
+                  'Jawab dengan penjelasan, foto tambahan, atau koreksi lokasi sesuai permintaan.',
+                ),
+              ],
+            ),
+            _KartuKlarifikasi(
+              judul: 'Penjelasan',
+              children: [
+                TextField(
+                  controller: _penjelasan,
+                  enabled: !terkunci,
+                  maxLength: 2000,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    hintText: 'Tulis penjelasan untuk Admin',
+                  ),
+                ),
+              ],
+            ),
+            KisiGlow(
+              lebarMinimum: 315,
+              kolomMaksimal: 2,
+              children: [
+                _KartuKlarifikasi(
+                  judul: 'Bukti tambahan',
+                  children: [
+                    const Text(
+                      'Maksimal 3 foto JPG atau PNG, masing-masing hingga 2 MB.',
+                    ),
+                    for (var indeks = 0; indeks < _foto.length; indeks++)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.image_outlined),
+                        title: Text(_foto[indeks].namaBerkas),
+                        trailing: IconButton(
+                          tooltip: 'Hapus foto',
+                          onPressed: terkunci
+                              ? null
+                              : () => setState(() => _foto.removeAt(indeks)),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ),
+                    OutlinedButton.icon(
+                      onPressed: terkunci || _foto.length >= 3
+                          ? null
+                          : _pilihFoto,
+                      icon: const Icon(Icons.add_photo_alternate_outlined),
+                      label: Text(
+                        _memilihFoto ? 'Memeriksa foto…' : 'Tambah foto',
+                      ),
+                    ),
+                  ],
+                ),
+                _KartuKlarifikasi(
+                  judul: 'Koreksi lokasi',
+                  children: [
+                    const Text(
+                      'Gunakan bagian ini jika pin atau patokan lokasi perlu diperbaiki.',
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: terkunci ? null : _pilihTitik,
+                      icon: const Icon(Icons.location_on_outlined),
+                      label: Text(
+                        titik == null
+                            ? 'Pilih ulang titik'
+                            : 'Ubah usulan titik',
+                      ),
+                    ),
+                    if (titik != null) ...[
+                      Text(
+                        '${titik.alamatPeta ?? titik.kecamatan} · ${titik.latitude.toStringAsFixed(6)}, '
+                        '${titik.longitude.toStringAsFixed(6)}',
+                      ),
+                      TextField(
+                        controller: _patokan,
+                        enabled: !terkunci,
+                        maxLength: 500,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Patokan lokasi baru',
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: terkunci
+                            ? null
+                            : () => setState(() {
+                                _titik = null;
+                                _patokan.clear();
+                              }),
+                        child: const Text('Hapus usulan lokasi'),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+            if (_galat case final pesan?)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  pesan,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  icon: const Icon(Icons.send_outlined),
+                  onPressed: terkunci ? null : _simpan,
+                  label: Text(_menyimpan ? 'Mengirim…' : 'Kirim Klarifikasi'),
+                ),
+                TextButton(
+                  onPressed: terkunci
+                      ? null
+                      : () => Navigator.maybePop(context),
+                  child: const Text('Kembali ke laporan'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class KartuRiwayatKlarifikasi extends StatelessWidget {
+  const KartuRiwayatKlarifikasi({super.key, required this.klarifikasi});
+
+  final KlarifikasiLaporan klarifikasi;
+
+  @override
+  Widget build(BuildContext context) {
+    final data = klarifikasi;
+    final awal = data.lokasiAwal;
+    final usulan = data.lokasiUsulan;
+    return _KartuKlarifikasi(
+      judul: 'Klarifikasi Warga',
+      children: [
+        Text(waktuWibWarga(data.dikirimUtc)),
+        Text(
+          data.idTindakLanjut == null
+              ? 'Menunggu pemeriksaan Admin'
+              : 'Diperiksa · ${data.hasilTindakLanjut}',
+        ),
+        SelectableText('Permintaan Admin · ${data.permintaan}'),
+        if (data.penjelasan.isNotEmpty) SelectableText(data.penjelasan),
+        if (awal != null) _lokasi('Lokasi sebelum klarifikasi', awal),
+        if (usulan != null) _lokasi('Usulan lokasi', usulan),
+        if (data.foto.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final bukti in data.foto)
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.image_outlined, size: 18),
+                  label: Text(bukti.nama),
+                  onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: Text(bukti.nama),
+                      content: SizedBox(
+                        width: 640,
+                        height: 320,
+                        child: InteractiveViewer(
+                          child: Image.memory(
+                            Uint8List.fromList(bukti.bytes),
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, error, stack) => const Center(
+                              child: Text('Foto tidak dapat ditampilkan.'),
+                            ),
+                          ),
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Tutup'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _lokasi(String label, LokasiKlarifikasi lokasi) => SelectableText(
+    '$label · ${lokasi.kecamatan}\n${lokasi.patokan}\n'
+    '${lokasi.latitude.toStringAsFixed(6)}, ${lokasi.longitude.toStringAsFixed(6)}',
+  );
+}
+
+class _KartuKlarifikasi extends StatelessWidget {
+  const _KartuKlarifikasi({required this.judul, required this.children});
+
+  final String judul;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 12),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        spacing: 8,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(judul, style: Theme.of(context).textTheme.titleMedium),
+          ...children,
+        ],
+      ),
+    ),
+  );
+}

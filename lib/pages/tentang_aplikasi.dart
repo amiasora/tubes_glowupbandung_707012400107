@@ -6,9 +6,7 @@ class TentangAplikasi extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tentang Aplikasi'),
-      ),
+      appBar: AppBar(title: const Text('Tentang Aplikasi')),
 
       body: const Padding(
         padding: EdgeInsets.all(24),
@@ -17,10 +15,7 @@ class TentangAplikasi extends StatelessWidget {
           children: [
             Text(
               'Glow Up Bandung',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
 
             SizedBox(height: 12),
@@ -35,9 +30,7 @@ class TentangAplikasi extends StatelessWidget {
 
             SizedBox(height: 20),
 
-            Text(
-              'Versi Purwarupa: 1.0.0',
-            ),
+            Text('Versi Purwarupa: 1.0.0'),
           ],
         ),
       ),

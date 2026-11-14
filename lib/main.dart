@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'cubit/form_laporan_cubit.dart';
@@ -8,6 +11,14 @@ import 'navigation/app_routes.dart';
 import 'theme/app_theme.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (kIsWeb) {
+    databaseFactory = databaseFactoryFfiWeb;
+  } else if (defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.windows) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
   runApp(const AplikasiGlowUpBandung());
 }
 
@@ -18,15 +29,9 @@ class AplikasiGlowUpBandung extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: [
-        BlocProvider<RiwayatLaporanCubit>(
-          create: (_) => RiwayatLaporanCubit(),
-        ),
-        BlocProvider<FormLaporanCubit>(
-          create: (_) => FormLaporanCubit(),
-        ),
-        BlocProvider<ThemeCubit>(
-          create: (_) => ThemeCubit(),
-        ),
+        BlocProvider<RiwayatLaporanCubit>(create: (_) => RiwayatLaporanCubit()),
+        BlocProvider<FormLaporanCubit>(create: (_) => FormLaporanCubit()),
+        BlocProvider<ThemeCubit>(create: (_) => ThemeCubit()),
       ],
       child: BlocBuilder<ThemeCubit, ThemeMode>(
         builder: (context, modeTema) {

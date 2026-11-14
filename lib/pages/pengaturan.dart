@@ -7,18 +7,13 @@ class Pengaturan extends StatelessWidget {
   const Pengaturan({super.key});
 
   void ujiRouteTidakDikenal(BuildContext context) {
-    Navigator.pushNamed(
-      context,
-      '/route-salah',
-    );
+    Navigator.pushNamed(context, '/route-salah');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pengaturan'),
-      ),
+      appBar: AppBar(title: const Text('Pengaturan')),
       body: ListView(
         children: [
           BlocBuilder<ThemeCubit, ThemeMode>(
@@ -48,9 +43,7 @@ class Pengaturan extends StatelessWidget {
             value: true,
             onChanged: (_) {},
             title: const Text('Notifikasi Laporan'),
-            subtitle: const Text(
-              'Terima informasi mengenai status laporan.',
-            ),
+            subtitle: const Text('Terima informasi mengenai status laporan.'),
           ),
           const ListTile(
             leading: Icon(Icons.language),

@@ -1,0 +1,148 @@
+
+import 'package:flutter/material.dart';
+
+import '../db/database_helper.dart';
+import '../models/laporan_sampah.dart';
+import '../models/referensi_laporan.dart';
+import '../widgets/kerangka_warga.dart';
+import 'riwayat_laporan.dart';
+
+class Beranda extends StatefulWidget {
+  const Beranda({super.key, this.idWarga = 1});
+  final int idWarga;
+
+  @override
+  State<Beranda> createState() => _BerandaState();
+}
+
+class _BerandaState extends State<Beranda> {
+  List<LaporanSampah> _laporan = [];
+  List<KategoriLaporan> _kategori = [];
+  bool _memuat = true;
+  String? _galat;
+  String _nama = '';
+  int _belumDibaca = 0;
+  int _nomorMuat = 0;
+
+  @override
+  void initState() { super.initState(); _muat(); }
+
+  Future<void> _muat() async {
+    final nomor = ++_nomorMuat;
+    setState(() { _memuat = true; _galat = null; });
+    try {
+      final db = DatabaseHelper.instance;
+      final laporan = await db.ambilLaporanWarga(widget.idWarga);
+      final kategori = await db.ambilKategoriAktif();
+      final notifikasi = await db.ambilNotifikasiWarga(widget.idWarga);
+      final warga = await db.ambilWargaAktif();
+      String? nama;
+      for (final item in warga) {
+        if (item['id_warga'] == widget.idWarga) nama = item['nama'] as String;
+      }
+      final pemilik = nama;
+      if (pemilik == null) throw StateError('Akun warga tidak tersedia.');
+      if (!mounted || nomor != _nomorMuat) return;
+      setState(() {
+        _laporan = laporan; _kategori = kategori; _nama = pemilik;
+        _belumDibaca = notifikasi.where((item) => !item.sudahDibaca).length;
+        _memuat = false;
+      });
+    } catch (_) {
+      if (!mounted || nomor != _nomorMuat) return;
+      setState(() {
+        _memuat = false; _galat = 'Laporan belum dapat dimuat. Coba muat ulang.';
+      });
+    }
+  }
+
+  Future<void> _buka(String route) async {
+    await Navigator.pushNamed<Object?>(context, route);
+    if (mounted) await _muat();
+  }
+
+  String _namaKategori(int id) {
+    for (final item in _kategori) {
+      if (item.idKategori == id) return item.namaKategori;
+    }
+    return 'Kategori tidak aktif';
+  }
+
+  @override
+  Widget build(BuildContext context) => KerangkaWarga(
+    menuAktif: MenuWarga.dashboard,
+    onKembali: _muat,
+    child: KontenWarga(children: [
+      const JudulHalamanWarga(judul: 'Dashboard Warga',
+        deskripsi: 'Laporan Anda dan perkembangan penanganannya.'),
+      if (_memuat) const LinearProgressIndicator(),
+      if (_galat != null) ...[
+        Text(_galat!),
+        OutlinedButton(onPressed: _muat, child: const Text('Muat Ulang')),
+      ] else ...[
+        if (!_memuat) ...[
+          Text('Selamat datang, $_nama.'),
+          const SizedBox(height: 14),
+        ],
+        FilledButton(
+          onPressed: _memuat ? null : () => _buka(MenuWarga.buatLaporan.route),
+          child: const Text('Buat Laporan')),
+        const SizedBox(height: 16),
+        if (!_memuat && _laporan.isEmpty)
+          const Card(child: Padding(padding: EdgeInsets.all(18),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Belum pernah membuat laporan',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+              SizedBox(height: 6),
+              Text('Laporan yang Anda kirim akan muncul di sini.'),
+            ]),
+          )),
+        ..._laporan.take(2).map((laporan) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Card(child: InkWell(
+            borderRadius: BorderRadius.circular(5),
+            onTap: () => Navigator.push<void>(context,
+              MaterialPageRoute(builder: (_) => DetailLaporanTersimpan(
+                idLaporan: laporan.idLaporan!,
+                idWarga: widget.idWarga, namaWarga: _nama,
+              )),
+            ),
+            child: Padding(padding: const EdgeInsets.all(18),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${laporan.kodeLaporan} · ${laporan.statusPenanganan.nilaiDatabase}',
+                    style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 6),
+                  Text('${_namaKategori(laporan.idKategori)} · '
+                    '${waktuWibWarga(laporan.dibuatAtUtc)}',
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  if (laporan.statusPenanganan == StatusPenanganan.menungguKlarifikasi)
+                    const Text('Buka detail untuk membaca kebutuhan informasi tambahan.'),
+                ],
+              ),
+            ),
+          )),
+        )),
+        const SizedBox(height: 12),
+        Card(child: ListTile(
+          title: const Text('Riwayat Laporan', style: TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text('Lihat seluruh ${_laporan.length} laporan milik akun Anda.'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _buka(MenuWarga.riwayat.route),
+        )),
+        const SizedBox(height: 12),
+        Card(child: ListTile(
+          title: const Text('Notifikasi', style: TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text('$_belumDibaca pemberitahuan belum dibaca.'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _buka(MenuWarga.notifikasi.route),
+        )),
+        const SizedBox(height: 16),
+        Align(alignment: Alignment.centerLeft,
+          child: TextButton.icon(onPressed: _memuat ? null : _muat,
+            icon: const Icon(Icons.refresh, size: 18),
+            label: const Text('Muat ulang laporan'))),
+      ],
+    ]),
+  );
+}

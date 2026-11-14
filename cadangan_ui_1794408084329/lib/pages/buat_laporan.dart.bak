@@ -1,0 +1,336 @@
+
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../cubit/buat_laporan_cubit.dart';
+import '../models/titik_laporan.dart';
+import '../widgets/kerangka_warga.dart';
+import 'pilih_lokasi_laporan.dart';
+
+class BuatLaporan extends StatelessWidget {
+  const BuatLaporan({super.key, this.idWarga = 1});
+
+  // Akun warga praktikum. Sesi login akan menggantikan nilai ini pada tahap berikut.
+  final int idWarga;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => BuatLaporanCubit(idWarga: idWarga)..muatReferensi(),
+      child: const _FormBuatLaporan(),
+    );
+  }
+}
+
+class _FormBuatLaporan extends StatefulWidget {
+  const _FormBuatLaporan();
+
+  @override
+  State<_FormBuatLaporan> createState() => _FormBuatLaporanState();
+}
+
+class _FormBuatLaporanState extends State<_FormBuatLaporan> {
+  final _form = GlobalKey<FormState>();
+  final _deskripsi = TextEditingController();
+  final _deskripsiLokasi = TextEditingController();
+  bool _pernahMenyimpan = false;
+  bool _mencobaKirim = false;
+
+  @override
+  void dispose() {
+    _deskripsi.dispose();
+    _deskripsiLokasi.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pilihLokasi() async {
+    final cubit = context.read<BuatLaporanCubit>();
+    final titik = await Navigator.push<TitikLaporan>(
+      context,
+      MaterialPageRoute(builder: (_) => PilihLokasiLaporan(
+        lokasiAwal: cubit.state.lokasi,
+      )),
+    );
+    if (!mounted || titik == null) return;
+    cubit.tetapkanLokasi(titik);
+  }
+
+  Future<void> _kirim() async {
+    setState(() => _mencobaKirim = true);
+    final valid = _form.currentState?.validate() ?? false;
+    FocusScope.of(context).unfocus();
+    final cubit = context.read<BuatLaporanCubit>();
+    if (!valid) return;
+    await cubit.kirim();
+  }
+
+  void _formBaru() {
+    setState(() => _mencobaKirim = false);
+    _deskripsi.clear();
+    _deskripsiLokasi.clear();
+    _form.currentState?.reset();
+    context.read<BuatLaporanCubit>().mulaiFormBaru();
+  }
+
+  String? _validasiPanjang(String? nilai, int minimum, int maksimum) {
+    final panjang = (nilai ?? '').trim().runes.length;
+    if (panjang < minimum || panjang > maksimum) {
+      return 'Isi $minimum–$maksimum karakter.';
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<BuatLaporanCubit, BuatLaporanState>(
+      listener: (context, state) {
+        if (state.hasilSimpan != null) _pernahMenyimpan = true;
+      },
+      builder: (context, state) {
+        final cubit = context.read<BuatLaporanCubit>();
+        final hasil = state.hasilSimpan;
+        final terkunci = state.sibuk || hasil != null;
+        return PopScope<Object?>(
+          canPop: !state.sibuk && !_pernahMenyimpan,
+          onPopInvokedWithResult: (didPop, result) {
+            if (!didPop && !state.sibuk && _pernahMenyimpan) {
+              Navigator.pop(context, true);
+            }
+          },
+          child: KerangkaWarga(
+            menuAktif: MenuWarga.buatLaporan,
+            navigasiAktif: !state.sibuk,
+            child: Align(alignment: Alignment.topLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1120),
+                child: hasil != null
+                    ? _tampilanBerhasil(state)
+                    : Form(
+                        key: _form,
+                        child: ListView(
+                          padding: const EdgeInsets.all(20),
+                          children: [
+                            JudulHalamanWarga(
+                              judul: 'Buat Laporan',
+                              deskripsi: state.namaWarga.isEmpty
+                                  ? 'Memuat identitas pelapor…'
+                                  : 'Pelapor: ${state.namaWarga}. Laporan terhubung dengan akun Anda.',
+                            ),
+                            if (state.memuatReferensi)
+                              const LinearProgressIndicator(),
+                            if (!state.referensiSiap && !state.memuatReferensi)
+                              OutlinedButton.icon(
+                                onPressed: state.sibuk ? null : cubit.muatReferensi,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Muat ulang data pilihan'),
+                              ),
+                            const SizedBox(height: 20),
+                            _judul('Deskripsi Laporan'),
+                            TextFormField(
+                              controller: _deskripsi,
+                              enabled: !terkunci,
+                              minLines: 4,
+                              maxLines: 8,
+                              decoration: InputDecoration(
+                                hintText: 'Jelaskan kondisi dan dampak sampah yang ditemukan.',
+                                helperText: 'Wajib diisi, 10–2.000 karakter.',
+                                counterText: '${state.deskripsiLaporan.trim().runes.length}/2000',
+                                border: const OutlineInputBorder(),
+                              ),
+                              validator: (nilai) => _validasiPanjang(nilai, 10, 2000),
+                              onChanged: cubit.ubahDeskripsi,
+                            ),
+                            const SizedBox(height: 20),
+                            _judul('Unggah Foto'),
+                            const Text('Pilih 1–3 foto JPG/PNG, maksimal 2 MB per foto.'),
+                            const SizedBox(height: 10),
+                            Wrap(spacing: 12, runSpacing: 12,
+                              children: List.generate(state.foto.length, (indeks) {
+                                final foto = state.foto[indeks];
+                                return SizedBox(width: 180,
+                                  child: Card(clipBehavior: Clip.antiAlias,
+                                    child: Column(mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Image.memory(Uint8List.fromList(foto.dataFoto),
+                                          width: 180, height: 120, fit: BoxFit.cover,
+                                          cacheWidth: 360,
+                                          errorBuilder: (context, error, stackTrace) =>
+                                              const SizedBox(height: 120,
+                                                child: Center(child: Text('Pratinjau tidak tersedia'))),
+                                        ),
+                                        Padding(padding: const EdgeInsets.all(8),
+                                          child: Text(foto.namaBerkas,
+                                            maxLines: 2, overflow: TextOverflow.ellipsis)),
+                                        Text('${(foto.ukuranByte / 1000).toStringAsFixed(1)} KB'),
+                                        TextButton.icon(
+                                          onPressed: terkunci ? null : () => cubit.hapusFoto(indeks),
+                                          icon: const Icon(Icons.delete_outline),
+                                          label: const Text('Hapus foto'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ),
+                            Align(alignment: Alignment.centerLeft,
+                              child: OutlinedButton.icon(
+                                onPressed: terkunci || state.foto.length >= 3
+                                    ? null : cubit.tambahFoto,
+                                icon: const Icon(Icons.add_photo_alternate_outlined),
+                                label: Text(state.memprosesFoto
+                                    ? 'Memeriksa foto…' : 'Tambah foto (${state.foto.length}/3)'),
+                              ),
+                            ),
+                            if (state.memprosesFoto) const LinearProgressIndicator(),
+                            if (_mencobaKirim && state.foto.isEmpty)
+                              Text('Unggah sedikitnya satu foto JPG/PNG.',
+                                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                            const SizedBox(height: 20),
+                            _judul('Kategori Laporan'),
+                            DropdownButtonFormField<int>(
+                              key: ValueKey(state.idKategori),
+                              initialValue: state.idKategori,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                hintText: 'Pilih satu kategori', border: OutlineInputBorder()),
+                              items: state.daftarKategori.map((item) => DropdownMenuItem(
+                                value: item.idKategori, child: Text(item.namaKategori),
+                              )).toList(),
+                              onChanged: terkunci || !state.referensiSiap
+                                  ? null : cubit.pilihKategori,
+                              validator: (nilai) => nilai == null ? 'Pilih kategori.' : null,
+                            ),
+                            const SizedBox(height: 20),
+                            _judul('Jenis Sampah'),
+                            const Text('Pilih sedikitnya satu jenis; boleh lebih dari satu.'),
+                            const SizedBox(height: 8),
+                            Wrap(spacing: 8, runSpacing: 8,
+                              children: state.daftarJenisSampah.map((item) => FilterChip(
+                                label: Text(item.namaJenis),
+                                selected: state.jenisDipilih.contains(item.idJenis),
+                                onSelected: terkunci ? null : (dipilih) =>
+                                    cubit.ubahJenisSampah(item.idJenis, dipilih),
+                              )).toList(),
+                            ),
+                            if (_mencobaKirim && state.jenisDipilih.isEmpty)
+                              Text('Pilih sedikitnya satu jenis sampah.',
+                                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                            const SizedBox(height: 20),
+                            _judul('Lokasi'),
+                            if (state.lokasi case final lokasi?)
+                              Card(child: Padding(padding: const EdgeInsets.all(14),
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Titik lokasi sudah dikonfirmasi.'),
+                                    Text('Kecamatan: ${lokasi.kecamatan}'),
+                                    SelectableText(
+                                      'Latitude: ${lokasi.latitude.toStringAsFixed(6)}\n'
+                                      'Longitude: ${lokasi.longitude.toStringAsFixed(6)}'),
+                                  ],
+                                ),
+                              ))
+                            else
+                              Text('Belum ada titik yang dikonfirmasi.',
+                                style: _mencobaKirim ? TextStyle(
+                                  color: Theme.of(context).colorScheme.error) : null),
+                            Wrap(spacing: 8, runSpacing: 8, children: [
+                              OutlinedButton.icon(
+                                onPressed: terkunci ? null : _pilihLokasi,
+                                icon: const Icon(Icons.map_outlined),
+                                label: Text(state.lokasi == null
+                                    ? 'Mencari Titik Lokasi' : 'Ubah Titik Lokasi'),
+                              ),
+                              if (state.lokasi != null)
+                                TextButton(onPressed: terkunci ? null : cubit.hapusLokasi,
+                                  child: const Text('Hapus pilihan titik')),
+                            ]),
+                            const SizedBox(height: 20),
+                            _judul('Deskripsi Lokasi'),
+                            TextFormField(
+                              controller: _deskripsiLokasi,
+                              enabled: !terkunci,
+                              minLines: 2,
+                              maxLines: 4,
+                              decoration: InputDecoration(
+                                hintText: 'Nama jalan, patokan, atau ciri lokasi sampah.',
+                                helperText: 'Wajib diisi, 5–500 karakter.',
+                                counterText: '${state.deskripsiLokasi.trim().runes.length}/500',
+                                border: const OutlineInputBorder(),
+                              ),
+                              validator: (nilai) => _validasiPanjang(nilai, 5, 500),
+                              onChanged: cubit.ubahDeskripsiLokasi,
+                            ),
+                            const SizedBox(height: 20),
+                            if (state.pesanError != null)
+                              Padding(padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(state.pesanError!,
+                                  style: TextStyle(color: Theme.of(context).colorScheme.error))),
+                            if (_mencobaKirim && !state.bolehKirim &&
+                                state.pesanError == null && state.pesanValidasi != null)
+                              Padding(padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(state.pesanValidasi!)),
+                            FilledButton.icon(
+                              onPressed: state.referensiSiap && !state.sibuk ? _kirim : null,
+                              icon: state.menyimpan
+                                  ? const SizedBox(width: 18, height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2))
+                                  : const Icon(Icons.send_outlined),
+                              label: Text(state.menyimpan ? 'Menyimpan…' : 'Kirim Laporan'),
+                            ),
+                            TextButton(
+                              onPressed: state.sibuk ? null : () => Navigator.maybePop(context),
+                              child: const Text('Batal'),
+                            ),
+                            const SizedBox(height: 32),
+                          ],
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _judul(String judul) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Text(judul, style: Theme.of(context).textTheme.titleMedium),
+  );
+
+  Widget _tampilanBerhasil(BuatLaporanState state) {
+    final laporan = state.hasilSimpan!;
+    return KontenWarga(children: [
+      const JudulHalamanWarga(judul: 'Laporan Tersimpan'),
+      Card(child: Padding(padding: const EdgeInsets.all(18),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Laporan berhasil dikirim',
+            style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SelectableText('${laporan.kodeLaporan} · ${waktuWibWarga(laporan.dibuatAtUtc)}'),
+        ]),
+      )),
+      const SizedBox(height: 12),
+      Text('Status: ${laporan.statusPenanganan.nilaiDatabase}. '
+        'Laporan menunggu peninjauan admin.'),
+      const SizedBox(height: 12),
+      const Text('Pemberitahuan pengiriman telah ditambahkan ke Notifikasi.'),
+      const SizedBox(height: 24),
+      FilledButton(
+        onPressed: () => Navigator.pushNamed<Object?>(context, '/detail-laporan',
+          arguments: <String, int>{
+            'idLaporan': laporan.idLaporan!, 'idWarga': state.idWarga,
+          },
+        ),
+        child: const Text('Lihat Detail Laporan'),
+      ),
+      const SizedBox(height: 8),
+      OutlinedButton(onPressed: () => Navigator.pop(context, true),
+        child: const Text('Kembali')),
+      TextButton(onPressed: _formBaru, child: const Text('Buat Laporan Baru')),
+    ]);
+  }
+}

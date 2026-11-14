@@ -1,0 +1,499 @@
+
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
+
+import '../db/database_helper.dart';
+import '../models/foto_laporan.dart';
+import '../models/jadwal_pengangkutan.dart';
+import '../models/klarifikasi_laporan.dart';
+import '../models/laporan_sampah.dart';
+import '../models/penanganan_laporan.dart';
+import '../models/referensi_laporan.dart';
+import '../models/titik_laporan.dart';
+import '../widgets/kerangka_warga.dart';
+import 'buat_laporan.dart';
+import 'jadwal_operasional.dart' show KartuAktivitasPengangkutan;
+import 'klarifikasi_warga.dart';
+import 'pilih_lokasi_laporan.dart';
+
+class RiwayatLaporan extends StatefulWidget {
+  const RiwayatLaporan({super.key, this.idWarga = 1});
+  final int idWarga;
+
+  @override
+  State<RiwayatLaporan> createState() => _RiwayatLaporanState();
+}
+
+class _RiwayatLaporanState extends State<RiwayatLaporan> {
+  final _database = DatabaseHelper.instance;
+  List<LaporanSampah> _semua = [];
+  String _nama = '';
+  bool _memuat = true;
+  String? _galat;
+  int _nomorMuat = 0;
+  StatusPenanganan? _statusPilihan;
+  DateTime? _awalPilihan;
+  DateTime? _akhirPilihan;
+  StatusPenanganan? _statusAktif;
+  DateTime? _awalAktif;
+  DateTime? _akhirAktif;
+  String? _galatFilter;
+  int _versiFilter = 0;
+
+  @override
+  void initState() { super.initState(); _muat(); }
+
+  Future<void> _muat() async {
+    final nomor = ++_nomorMuat;
+    setState(() { _memuat = true; _galat = null; });
+    try {
+      final daftar = await _database.ambilLaporanWarga(widget.idWarga);
+      final warga = await _database.ambilWargaAktif();
+      String? nama;
+      for (final akun in warga) {
+        if (akun['id_warga'] == widget.idWarga) nama = akun['nama'] as String;
+      }
+      final pemilik = nama;
+      if (pemilik == null) throw StateError('Akun warga tidak tersedia.');
+      if (!mounted || nomor != _nomorMuat) return;
+      setState(() { _semua = daftar; _nama = pemilik; _memuat = false; });
+    } catch (_) {
+      if (!mounted || nomor != _nomorMuat) return;
+      setState(() {
+        _memuat = false; _galat = 'Riwayat belum dapat dimuat. Coba muat ulang.';
+      });
+    }
+  }
+
+  Future<void> _buatLaporan() async {
+    await Navigator.push<bool>(context, MaterialPageRoute(
+      builder: (_) => BuatLaporan(idWarga: widget.idWarga),
+    ));
+    if (mounted) await _muat();
+  }
+
+  Future<void> _pilihTanggal(bool awal) async {
+    final sekarang = DateTime.now().toUtc().add(const Duration(hours: 7));
+    final pilihan = await showDatePicker(
+      context: context,
+      initialDate: (awal ? _awalPilihan : _akhirPilihan) ??
+          DateTime(sekarang.year, sekarang.month, sekarang.day),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(sekarang.year + 10, 12, 31),
+      helpText: awal ? 'Tanggal awal (WIB)' : 'Tanggal akhir (WIB)',
+      cancelText: 'Batal', confirmText: 'Pilih',
+    );
+    if (!mounted || pilihan == null) return;
+    setState(() {
+      if (awal) { _awalPilihan = pilihan; } else { _akhirPilihan = pilihan; }
+      _galatFilter = null;
+    });
+  }
+
+  void _terapkanFilter() {
+    final awal = _awalPilihan;
+    final akhir = _akhirPilihan;
+    if (awal != null && akhir != null && akhir.isBefore(awal)) {
+      setState(() => _galatFilter = 'Tanggal akhir harus sama atau setelah tanggal awal.');
+      return;
+    }
+    setState(() {
+      _statusAktif = _statusPilihan; _awalAktif = awal; _akhirAktif = akhir;
+      _galatFilter = null;
+    });
+  }
+
+  void _resetFilter() => setState(() {
+    _statusPilihan = null; _statusAktif = null;
+    _awalPilihan = null; _akhirPilihan = null;
+    _awalAktif = null; _akhirAktif = null;
+    _galatFilter = null; _versiFilter++;
+  });
+
+  List<LaporanSampah> get _hasilFilter {
+    final awal = _awalAktif;
+    final akhir = _akhirAktif;
+    final mulaiUtc = awal == null ? null
+        : DateTime.utc(awal.year, awal.month, awal.day).subtract(const Duration(hours: 7));
+    final sebelumUtc = akhir == null ? null
+        : DateTime.utc(akhir.year, akhir.month, akhir.day + 1).subtract(const Duration(hours: 7));
+    return _semua.where((item) {
+      if (_statusAktif != null && item.statusPenanganan != _statusAktif) return false;
+      if (mulaiUtc != null && item.dibuatAtUtc.isBefore(mulaiUtc)) return false;
+      if (sebelumUtc != null && !item.dibuatAtUtc.isBefore(sebelumUtc)) return false;
+      return true;
+    }).toList(growable: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasil = _hasilFilter;
+    return KerangkaWarga(
+      menuAktif: MenuWarga.riwayat, onKembali: _muat,
+      child: KontenWarga(children: [
+        const JudulHalamanWarga(judul: 'Riwayat Laporan',
+          deskripsi: 'Hanya laporan akun Anda; terbaru berdasarkan waktu pembuatan.'),
+        if (_memuat) const LinearProgressIndicator()
+        else if (_galat != null) ...[
+          Text(_galat!),
+          OutlinedButton(onPressed: _muat, child: const Text('Muat Ulang')),
+        ] else ...[
+          _label('Status'),
+          DropdownButtonFormField<StatusPenanganan>(
+            key: ValueKey(_versiFilter), initialValue: _statusPilihan,
+            isExpanded: true,
+            decoration: const InputDecoration(hintText: 'Semua status'),
+            items: [
+              const DropdownMenuItem<StatusPenanganan>(value: null,
+                child: Text('Semua status')),
+              ...StatusPenanganan.values.map((status) => DropdownMenuItem(
+                value: status, child: Text(status.nilaiDatabase))),
+            ],
+            onChanged: (nilai) => setState(() => _statusPilihan = nilai),
+          ),
+          const SizedBox(height: 14),
+          _label('Tanggal awal'),
+          _kolomTanggal(_awalPilihan, () => _pilihTanggal(true)),
+          const SizedBox(height: 14),
+          _label('Tanggal akhir'),
+          _kolomTanggal(_akhirPilihan, () => _pilihTanggal(false)),
+          const SizedBox(height: 8),
+          Text('Tanggal pembuatan dalam WIB, termasuk kedua batas tanggal.',
+            style: TextStyle(fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          if (_galatFilter != null)
+            Text(_galatFilter!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          const SizedBox(height: 18),
+          FilledButton(onPressed: _terapkanFilter, child: const Text('Terapkan Filter')),
+          const SizedBox(height: 10),
+          OutlinedButton(onPressed: _resetFilter, child: const Text('Reset Filter')),
+          const SizedBox(height: 18),
+          if (_semua.isEmpty)
+            Card(child: Padding(padding: const EdgeInsets.all(18),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Belum pernah membuat laporan.',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                const Text('Buat laporan pertama untuk menyampaikan kondisi sampah.'),
+                const SizedBox(height: 12),
+                OutlinedButton(onPressed: _buatLaporan, child: const Text('Buat Laporan')),
+              ]),
+            ))
+          else if (hasil.isEmpty)
+            const Card(child: Padding(padding: EdgeInsets.all(18),
+              child: Text('Tidak ada laporan yang sesuai filter.')))
+          else ...hasil.map((item) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Card(child: InkWell(
+              borderRadius: BorderRadius.circular(5),
+              onTap: () => Navigator.push<void>(context, MaterialPageRoute(
+                builder: (_) => DetailLaporanTersimpan(
+                  idLaporan: item.idLaporan!, idWarga: widget.idWarga, namaWarga: _nama,
+                ),
+              )),
+              child: Padding(padding: const EdgeInsets.all(18),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${item.kodeLaporan} · ${item.statusPenanganan.nilaiDatabase}',
+                    style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text('${waktuWibWarga(item.dibuatAtUtc)} · Lihat Detail',
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                ]),
+              ),
+            )),
+          )),
+          const SizedBox(height: 14),
+          Text('${hasil.length} laporan ditampilkan.'),
+          Align(alignment: Alignment.centerLeft,
+            child: TextButton.icon(onPressed: _muat,
+              icon: const Icon(Icons.refresh, size: 18), label: const Text('Muat ulang riwayat'))),
+        ],
+      ]),
+    );
+  }
+
+  Widget _label(String label) => Padding(padding: const EdgeInsets.only(bottom: 6),
+    child: Text(label, style: Theme.of(context).textTheme.titleMedium));
+
+  Widget _kolomTanggal(DateTime? tanggal, VoidCallback pilih) => OutlinedButton.icon(
+    onPressed: pilih,
+    style: OutlinedButton.styleFrom(alignment: Alignment.centerLeft,
+      foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+      side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
+    icon: const Icon(Icons.calendar_today_outlined, size: 16),
+    label: Text(tanggal == null ? 'Pilih tanggal' : tanggalWarga(tanggal)),
+  );
+}
+
+class DetailLaporanTersimpan extends StatefulWidget {
+  const DetailLaporanTersimpan({
+    super.key, required this.idLaporan, this.idWarga = 1, this.namaWarga = '',
+  });
+
+  final int idLaporan;
+  final int idWarga;
+  final String namaWarga;
+
+  @override
+  State<DetailLaporanTersimpan> createState() => _DetailLaporanTersimpanState();
+}
+
+class _DetailLaporanTersimpanState extends State<DetailLaporanTersimpan> {
+  LaporanSampah? _laporan;
+  List<FotoLaporan> _foto = [];
+  List<JenisSampah> _jenis = [];
+  String _kategori = '';
+  String _namaWarga = '';
+  Map<String, Object?>? _verifikasi;
+  ({String kode, String status})? _laporanUtama;
+  JadwalPengangkutan? _jadwal;
+  List<AktivitasPengangkutan> _aktivitas = const [];
+  List<KlarifikasiLaporan> _klarifikasi = const [];
+  List<Map<String, Object?>> _riwayatStatus = [];
+  bool _memuat = true;
+  String? _galat;
+
+  @override
+  void initState() { super.initState(); _muat(); }
+
+  Future<void> _muat() async {
+    setState(() { _memuat = true; _galat = null; });
+    try {
+      final db = DatabaseHelper.instance;
+      final laporan = await db.ambilDetailLaporan(
+        idLaporan: widget.idLaporan, idWarga: widget.idWarga);
+      if (laporan == null) throw StateError('Laporan tidak ditemukan.');
+      final foto = await db.ambilFotoLaporan(
+        idLaporan: widget.idLaporan, idWarga: widget.idWarga);
+      final jenis = await db.ambilJenisSampahLaporan(
+        idLaporan: widget.idLaporan, idWarga: widget.idWarga);
+      final kategori = await db.ambilKategoriAktif();
+      final verifikasi = await db.ambilVerifikasiTerakhir(
+        idLaporan: widget.idLaporan, idWarga: widget.idWarga);
+      final klarifikasi = await db.ambilKlarifikasiWarga(
+        idLaporan: widget.idLaporan, idWarga: widget.idWarga);
+      final jadwal = await db.ambilJadwalAktifWarga(
+        idLaporan: widget.idLaporan, idWarga: widget.idWarga);
+      final aktivitas = await db.ambilAktivitasWarga(
+        idLaporan: widget.idLaporan, idWarga: widget.idWarga);
+      final utama = await db.ambilRingkasanLaporanUtama(
+        idLaporan: widget.idLaporan, idWarga: widget.idWarga);
+      final riwayat = await db.ambilRiwayatStatus(
+        idLaporan: widget.idLaporan, idWarga: widget.idWarga);
+      final warga = await db.ambilWargaAktif();
+      String? nama;
+      for (final item in warga) {
+        if (item['id_warga'] == widget.idWarga) nama = item['nama'] as String;
+      }
+      final pemilik = nama;
+      if (pemilik == null) throw StateError('Akun warga tidak tersedia.');
+      if (!mounted) return;
+      var namaKategori = 'Kategori tidak aktif';
+      for (final item in kategori) {
+        if (item.idKategori == laporan.idKategori) namaKategori = item.namaKategori;
+      }
+      setState(() {
+        _laporan = laporan; _foto = foto; _jenis = jenis;
+        _kategori = namaKategori; _namaWarga = pemilik;
+        _verifikasi = verifikasi; _riwayatStatus = riwayat; _memuat = false;
+        _laporanUtama = utama;
+        _jadwal = jadwal;
+        _aktivitas = aktivitas;
+        _klarifikasi = klarifikasi;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _memuat = false;
+        _galat = 'Rincian belum dapat dibaca. Coba muat ulang.';
+      });
+    }
+  }
+
+  Future<void> _bukaKlarifikasi(LaporanSampah laporan, int idPermintaan, String permintaan) async {
+    final terkirim = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => KlarifikasiWarga(
+        idLaporan: widget.idLaporan,
+        idWarga: widget.idWarga,
+        idPermintaan: idPermintaan,
+        kode: laporan.kodeLaporan ?? 'Laporan',
+        permintaan: permintaan,
+        titikAwal: TitikLaporan.konfirmasi(
+          latitude: laporan.latitude,
+          longitude: laporan.longitude,
+          kecamatan: laporan.kecamatan,
+          metodeLokasi: laporan.metodeLokasi,
+        ),
+      )),
+    );
+    if (!mounted) return;
+    await _muat();
+    if (mounted && terkirim == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Klarifikasi dikirim untuk diperiksa Admin.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final laporan = _laporan;
+    final idPermintaan = _verifikasi?['id_verifikasi'] as int?;
+    final permintaan = _verifikasi?['kebutuhan_klarifikasi'] as String?;
+    return KerangkaWarga(
+      menuAktif: MenuWarga.riwayat,
+      child: Align(alignment: Alignment.topLeft, child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1120),
+        child: _memuat
+            ? const Center(child: CircularProgressIndicator())
+            : _galat != null || laporan == null
+                ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Text(_galat ?? 'Laporan tidak ditemukan.'),
+                    OutlinedButton(onPressed: _muat, child: const Text('Muat ulang')),
+                  ]))
+                : ListView(padding: const EdgeInsets.all(20), children: [
+                    const JudulHalamanWarga(judul: 'Detail Laporan'),
+                    SelectableText(laporan.kodeLaporan ?? 'Laporan',
+                      style: Theme.of(context).textTheme.headlineSmall),
+                    Align(alignment: Alignment.centerLeft,
+                      child: Chip(label: Text(laporan.statusPenanganan.nilaiDatabase))),
+                    if (idPermintaan != null &&
+                        permintaan != null &&
+                        laporan.idVerifikasiTerakhir == idPermintaan &&
+                        laporan.statusPenanganan == StatusPenanganan.menungguKlarifikasi)
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            spacing: 8,
+                            children: [
+                              Text('Permintaan Klarifikasi',
+                                style: Theme.of(context).textTheme.titleMedium),
+                              SelectableText(permintaan),
+                              if (_klarifikasi.any((data) => data.idPermintaan == idPermintaan))
+                                const Text('Klarifikasi dikirim · Menunggu pemeriksaan Admin')
+                              else
+                                FilledButton(
+                                  onPressed: () => _bukaKlarifikasi(laporan, idPermintaan, permintaan),
+                                  child: const Text('Kirim Klarifikasi'),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    _bagian('Pelapor', _namaWarga),
+                    _bagian('Dibuat', waktuWibWarga(laporan.dibuatAtUtc)),
+                    _bagian('Kategori', _kategori),
+                    _bagian('Deskripsi laporan', laporan.deskripsiLaporan),
+                    _bagian('Jenis sampah', _jenis.isEmpty
+                        ? 'Tidak tercatat' : _jenis.map((item) => item.namaJenis).join(', ')),
+                    _bagian('Foto kondisi sampah', '${_foto.length} foto tersimpan'),
+                    Wrap(spacing: 12, runSpacing: 12, children: _foto.map((foto) =>
+                      SizedBox(width: 240, child: Card(clipBehavior: Clip.antiAlias,
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          InkWell(
+                            onTap: () => showDialog<void>(context: context,
+                              builder: (context) => Dialog(child: Column(
+                                mainAxisSize: MainAxisSize.min, children: [
+                                  Flexible(child: InteractiveViewer(
+                                    child: Image.memory(Uint8List.fromList(foto.dataFoto), fit: BoxFit.contain),
+                                  )),
+                                  TextButton(onPressed: () => Navigator.pop(context),
+                                    child: const Text('Tutup foto')),
+                                ],
+                              )),
+                            ),
+                            child: Image.memory(Uint8List.fromList(foto.dataFoto),
+                              width: 240, height: 160, fit: BoxFit.cover, cacheWidth: 480,
+                              errorBuilder: (context, error, stackTrace) => const SizedBox(
+                                height: 160, child: Center(child: Text('Pratinjau tidak tersedia'))),
+                            ),
+                          ),
+                          Padding(padding: const EdgeInsets.all(10),
+                            child: Text(foto.namaBerkas, maxLines: 2,
+                              overflow: TextOverflow.ellipsis)),
+                        ]),
+                      )),
+                    ).toList()),
+                    _bagian('Deskripsi lokasi', laporan.deskripsiLokasi),
+                    _bagian('Kecamatan', laporan.kecamatan),
+                    _bagian('Koordinat',
+                      'Latitude: ${laporan.latitude.toStringAsFixed(6)}\n'
+                      'Longitude: ${laporan.longitude.toStringAsFixed(6)}'),
+                    _bagian('Sumber titik lokasi',
+                      laporan.metodeLokasi == MetodeLokasi.perangkat
+                          ? 'Lokasi perangkat' : 'Pilihan pada peta'),
+                    _bagian('Lokasi dikonfirmasi',
+                      waktuWibWarga(laporan.lokasiDikonfirmasiAtUtc)),
+                    SizedBox(height: 320, child: PetaLaporan(
+                      pusatAwal: LatLng(laporan.latitude, laporan.longitude),
+                      titik: LatLng(laporan.latitude, laporan.longitude),
+                    )),
+                    if (laporan.diterimaAtUtc case final waktu?)
+                      _bagian('Diterima', waktuWibWarga(waktu)),
+                    if (laporan.selesaiAtUtc case final waktu?)
+                      _bagian('Selesai', waktuWibWarga(waktu)),
+                    const SizedBox(height: 16),
+                    Card(child: Padding(padding: const EdgeInsets.all(16),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(_verifikasi == null ? 'Verifikasi: Belum ditinjau'
+                            : 'Verifikasi: ${_verifikasi!['hasil']}',
+                          style: Theme.of(context).textTheme.titleMedium),
+                        const SizedBox(height: 6),
+                        Text(_verifikasi == null
+                            ? 'Laporan menunggu keputusan admin.'
+                            : '${_verifikasi!['alasan']}'),
+                        if (_verifikasi != null) ...[
+                          const SizedBox(height: 6),
+                          Text('Pemeriksa: ${_verifikasi!['nama_admin']}'),
+                          Text(waktuWibWarga(DateTime.parse(
+                            _verifikasi!['diperiksa_at_utc'] as String))),
+                        ],
+                      ]),
+                    )),
+                    for (final data in _klarifikasi)
+                      KartuRiwayatKlarifikasi(klarifikasi: data),
+                    if (_laporanUtama case final utama?)
+                      _bagian('Laporan utama', '${utama.kode} · ${utama.status}'),
+                    if (_jadwal case final jadwal?)
+                      _bagian('Jadwal Pengangkutan',
+                        '${jadwal.status}\n'
+                        'Mulai ${waktuWibWarga(jadwal.mulaiUtc)}\n'
+                        'Perkiraan selesai ${waktuWibWarga(jadwal.selesaiUtc)}'),
+                    if (_aktivitas.isNotEmpty) ...[
+                      _bagian('Aktivitas pengangkutan', ''),
+                      for (final aktivitas in _aktivitas)
+                        KartuAktivitasPengangkutan(aktivitas: aktivitas),
+                    ],
+                    _bagian('Perkembangan laporan', ''),
+                    ..._riwayatStatus.map((item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Card(child: Padding(padding: const EdgeInsets.all(14),
+child: Text(
+                          '${item['status_lama'] ?? 'Laporan dikirim'} → ${item['status_baru']}\n'
+                          '${waktuWibWarga(DateTime.parse(item['diubah_at_utc'] as String))}',
+                        ),
+                      )),
+                    )),
+                    const SizedBox(height: 16),
+                    OutlinedButton(onPressed: () => Navigator.maybePop(context),
+                      child: const Text('Kembali')),
+                    const SizedBox(height: 24),
+                  ]),
+      )),
+    );
+  }
+
+  Widget _bagian(String judul, String isi) => Padding(
+    padding: const EdgeInsets.only(top: 16, bottom: 4),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(judul, style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 4),
+      SelectableText(isi),
+    ]),
+  );
+}

@@ -1,0 +1,63 @@
+
+import 'package:flutter/material.dart';
+
+class AppTheme {
+  AppTheme._();
+
+  static const Color warnaDasar = Color(0xFF087CF0);
+  static ThemeData get lightTheme => _buatTema(Brightness.light);
+  static ThemeData get darkTheme => _buatTema(Brightness.dark);
+
+  static ThemeData _buatTema(Brightness brightness) {
+    final gelap = brightness == Brightness.dark;
+    final skema = ColorScheme.fromSeed(
+      seedColor: warnaDasar, brightness: brightness,
+    ).copyWith(
+      primary: gelap ? const Color(0xFF80BCFF) : warnaDasar,
+      onPrimary: gelap ? const Color(0xFF102C4D) : Colors.white,
+      primaryContainer: gelap ? const Color(0xFF163E69) : const Color(0xFFE5F0FF),
+      surface: gelap ? const Color(0xFF172436) : Colors.white,
+      onSurface: gelap ? const Color(0xFFE7EFF8) : const Color(0xFF172C46),
+      onSurfaceVariant: gelap ? const Color(0xFFB6C7DC) : const Color(0xFF657E9F),
+      outlineVariant: gelap ? const Color(0xFF3C526D) : const Color(0xFFD7E2EE),
+    );
+    final dasar = ThemeData(useMaterial3: true, colorScheme: skema);
+    final bentuk = RoundedRectangleBorder(borderRadius: BorderRadius.circular(5));
+    final batas = OutlineInputBorder(borderRadius: BorderRadius.circular(5),
+      borderSide: BorderSide(color: skema.outlineVariant));
+    return dasar.copyWith(
+      scaffoldBackgroundColor: gelap
+          ? const Color(0xFF101B2A) : const Color(0xFFF0F7FF),
+      textTheme: dasar.textTheme.copyWith(
+        headlineSmall: TextStyle(fontSize: 25, fontWeight: FontWeight.w800,
+          color: skema.onSurface),
+        titleMedium: TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
+          color: skema.onSurface),
+        bodyMedium: TextStyle(fontSize: 14, height: 1.45, color: skema.onSurface),
+      ),
+      cardTheme: CardThemeData(
+        color: skema.surface, elevation: 0, surfaceTintColor: Colors.transparent,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5),
+          side: BorderSide(color: skema.outlineVariant)),
+      ),
+      inputDecorationTheme: InputDecorationThemeData(
+        filled: true, fillColor: skema.surface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: batas, enabledBorder: batas,
+        focusedBorder: batas.copyWith(borderSide: BorderSide(color: skema.primary)),
+        errorMaxLines: 3, helperMaxLines: 3,
+      ),
+      filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
+        shape: bentuk, minimumSize: const Size(0, 46),
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      )),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(
+        shape: bentuk, minimumSize: const Size(0, 46),
+        backgroundColor: skema.surface, side: BorderSide(color: skema.primary),
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      )),
+      textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(shape: bentuk)),
+    );
+  }
+}
