@@ -11,13 +11,25 @@ typedef HasilPemrosesanFoto = ({
 Future<HasilPemrosesanFoto> prosesFoto(
   Uint8List data, {
   required bool kompres,
+  Uri? alamatPekerja,
 }) async {
-  final pekerja = _Worker('gub_foto_worker.js'.toJS);
+  // FotoLaporan menyimpan byte sebagai unmodifiable view.
+  // Salin agar JavaScript menerima Uint8Array biasa.
+  final salinan = Uint8List.fromList(data);
+
+  final pekerja = _Worker(
+    (alamatPekerja?.toString() ?? 'gub_foto_worker.js').toJS,
+  );
+
   final respons = Completer<_Jawaban>();
+
   try {
     pekerja.onmessage = ((_Pesan pesan) {
-      if (!respons.isCompleted) respons.complete(pesan.data);
+      if (!respons.isCompleted) {
+        respons.complete(pesan.data);
+      }
     }).toJS;
+
     pekerja.onerror = ((JSObject _) {
       if (!respons.isCompleted) {
         respons.completeError(
@@ -27,15 +39,44 @@ Future<HasilPemrosesanFoto> prosesFoto(
         );
       }
     }).toJS;
-    pekerja.postMessage(_Masukan(data: data.toJS, kompres: kompres.toJS));
+
+    pekerja.onmessageerror = ((JSObject _) {
+      if (!respons.isCompleted) {
+        respons.completeError(
+          const FormatException(
+            'Hasil pemrosesan foto belum dapat diterima. Coba lagi.',
+          ),
+        );
+      }
+    }).toJS;
+
+    pekerja.postMessage(_Masukan(data: salinan.toJS, kompres: kompres.toJS));
 
     final hasil = await respons.future.timeout(const Duration(seconds: 25));
-    if (hasil.galat case final galat?) throw FormatException(galat.toDart);
+
+    if (hasil.galat case final galat?) {
+      throw FormatException(galat.toDart);
+    }
+
+    final piksel = hasil.piksel?.toDart;
+    final pola = hasil.pola?.toDart;
+
+    if (piksel == null ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(piksel) ||
+        pola == null ||
+        !RegExp(r'^[01]{64}$').hasMatch(pola)) {
+      throw const FormatException(
+        'Hasil pemeriksaan foto tidak lengkap. Coba lagi.',
+      );
+    }
 
     return (
-      piksel: hasil.piksel!.toDart,
-      pola: [for (final bit in hasil.pola!.toDart.split('')) bit == '1'],
-      hasil: hasil.data?.toDart,
+      piksel: piksel,
+      pola: [for (final bit in pola.split('')) bit == '1'],
+      hasil: switch (hasil.data) {
+        final bytes? => Uint8List.fromList(bytes.toDart),
+        null => null,
+      },
     );
   } on TimeoutException {
     throw const FormatException(
@@ -49,8 +90,11 @@ Future<HasilPemrosesanFoto> prosesFoto(
 @JS('Worker')
 extension type _Worker._(JSObject _) implements JSObject {
   external _Worker(JSString url);
+
   external set onmessage(JSFunction fungsi);
   external set onerror(JSFunction fungsi);
+  external set onmessageerror(JSFunction fungsi);
+
   external void postMessage(_Masukan pesan);
   external void terminate();
 }
