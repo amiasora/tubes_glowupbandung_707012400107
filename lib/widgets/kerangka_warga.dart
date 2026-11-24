@@ -12,6 +12,7 @@ enum MenuWarga {
   notifikasi('Notifikasi', '/notifikasi');
 
   const MenuWarga(this.label, this.route);
+
   final String label;
   final String route;
 }
@@ -82,33 +83,44 @@ class _KerangkaPeranState extends State<KerangkaPeran> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
     final sekarangAktif = ModalRoute.isCurrentOf(context) ?? true;
+
     if (sekarangAktif && !_ruteAktif && _pernahAktif) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _ruteAktif) widget.onKembali?.call();
+        if (mounted && _ruteAktif) {
+          widget.onKembali?.call();
+        }
       });
     }
+
     _ruteAktif = sekarangAktif;
     _pernahAktif = _pernahAktif || sekarangAktif;
   }
 
   void _buka(String rute) {
     if (!widget.navigasiAktif) return;
+
     final navigator = Navigator.of(context);
+
     if (rute == '/') {
       navigator.popUntil((route) => route.isFirst);
       return;
     }
+
     if (rute == widget.ruteAktif &&
         ModalRoute.of(context)?.settings.name == rute) {
       return;
     }
+
     navigator.pushNamed<Object?>(rute);
   }
 
   void _keluar() {
     if (!widget.navigasiAktif) return;
+
     SesiAkun.keluar();
+
     Navigator.of(
       context,
       rootNavigator: true,
@@ -133,7 +145,10 @@ class _KerangkaPeranState extends State<KerangkaPeran> {
   };
 
   String _pilihanAktif(Map<String, String> menu) {
-    if (menu.containsKey(widget.ruteAktif)) return widget.ruteAktif;
+    if (menu.containsKey(widget.ruteAktif)) {
+      return widget.ruteAktif;
+    }
+
     return switch (widget.peran) {
       PeranAkun.admin => '/admin/laporan',
       PeranAkun.petugas => '/petugas/jadwal',
@@ -148,14 +163,17 @@ class _KerangkaPeranState extends State<KerangkaPeran> {
     final ponsel = lebar < 760;
     final papanKetik = MediaQuery.viewInsetsOf(context).bottom > 0;
     final warna = Theme.of(context).colorScheme;
+
     final menu = switch (widget.peran) {
       PeranAkun.admin => _menuAdmin,
       PeranAkun.petugas => _menuPetugas,
       PeranAkun.warga => widget.menu,
     };
+
     final aktif = _pilihanAktif(menu);
     final rute = menu.keys.toList(growable: false);
     final bisaKembali = Navigator.canPop(context);
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: warna.surface,
@@ -181,6 +199,12 @@ class _KerangkaPeranState extends State<KerangkaPeran> {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: LabelGlow(widget.peran.label, icon: Icons.person_outline),
             ),
+          IconButton(
+            key: const ValueKey('buka-pengaturan'),
+            tooltip: 'Pengaturan',
+            onPressed: widget.navigasiAktif ? () => _buka('/pengaturan') : null,
+            icon: const Icon(Icons.settings_outlined),
+          ),
           if (ponsel)
             IconButton(
               tooltip: 'Keluar',
@@ -317,11 +341,13 @@ class _KerangkaPeranState extends State<KerangkaPeran> {
 
 class MerekGlow extends StatelessWidget {
   const MerekGlow({super.key, this.terang = false});
+
   final bool terang;
 
   @override
   Widget build(BuildContext context) {
     final warna = Theme.of(context).colorScheme;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -358,6 +384,7 @@ class MerekGlow extends StatelessWidget {
 
 class LabelGlow extends StatelessWidget {
   const LabelGlow(this.label, {super.key, this.icon});
+
   final String label;
   final IconData? icon;
 
@@ -366,6 +393,7 @@ class LabelGlow extends StatelessWidget {
     final tema = Theme.of(context);
     final skema = tema.colorScheme;
     final gelap = tema.brightness == Brightness.dark;
+
     final (latar, teks, simbol) = switch (label.toLowerCase()) {
       'diterima' || 'valid' || 'selesai' => (
         skema.primaryContainer,
@@ -393,6 +421,7 @@ class LabelGlow extends StatelessWidget {
         Icons.circle_outlined,
       ),
     };
+
     return DecoratedBox(
       decoration: BoxDecoration(
         color: latar,
@@ -425,6 +454,7 @@ class LabelGlow extends StatelessWidget {
 
 class JudulHalamanWarga extends StatelessWidget {
   const JudulHalamanWarga({super.key, required this.judul, this.deskripsi});
+
   final String judul;
   final String? deskripsi;
 
@@ -432,6 +462,7 @@ class JudulHalamanWarga extends StatelessWidget {
   Widget build(BuildContext context) {
     final tema = Theme.of(context);
     final ponsel = MediaQuery.sizeOf(context).width < 760;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
       child: Column(
@@ -467,6 +498,7 @@ class KontenWarga extends StatelessWidget {
     this.maxLebar = 1248,
     this.controller,
   });
+
   final List<Widget> children;
   final double maxLebar;
   final ScrollController? controller;
@@ -480,7 +512,9 @@ class KontenWarga extends StatelessWidget {
           : lebar < 900
           ? 24.0
           : 32.0;
+
       final samping = math.max(tepi, (lebar - maxLebar) / 2 + tepi);
+
       return ListView(
         controller: controller,
         padding: EdgeInsets.fromLTRB(samping, tepi, samping, 32),
@@ -496,6 +530,7 @@ class PanelGlow extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(18),
   });
+
   final Widget child;
   final EdgeInsetsGeometry padding;
 
@@ -513,6 +548,7 @@ class KisiGlow extends StatelessWidget {
     this.kolomMaksimal = 3,
     this.jarak = 12,
   });
+
   final List<Widget> children;
   final double lebarMinimum;
   final int kolomMaksimal;
@@ -525,7 +561,9 @@ class KisiGlow extends StatelessWidget {
           .floor()
           .clamp(1, kolomMaksimal)
           .toInt();
+
       final lebar = (batas.maxWidth - (kolom - 1) * jarak) / kolom;
+
       return Wrap(
         spacing: jarak,
         runSpacing: jarak,
@@ -545,6 +583,7 @@ class KeadaanGlow extends StatelessWidget {
     required this.icon,
     this.aksi,
   });
+
   final String judul;
   final String pesan;
   final IconData icon;
@@ -553,6 +592,7 @@ class KeadaanGlow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tema = Theme.of(context);
+
     return PanelGlow(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -570,10 +610,12 @@ class KeadaanGlow extends StatelessWidget {
 
 String tanggalWarga(DateTime tanggal) =>
     '${tanggal.day.toString().padLeft(2, '0')}/'
-    '${tanggal.month.toString().padLeft(2, '0')}/${tanggal.year}';
+    '${tanggal.month.toString().padLeft(2, '0')}/'
+    '${tanggal.year}';
 
 String waktuWibWarga(DateTime utc) {
   final wib = utc.toUtc().add(const Duration(hours: 7));
+
   return '${tanggalWarga(wib)} '
       '${wib.hour.toString().padLeft(2, '0')}:'
       '${wib.minute.toString().padLeft(2, '0')} WIB';

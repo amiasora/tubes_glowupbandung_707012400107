@@ -2,16 +2,57 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../cubit/theme_cubit.dart';
+import '../services/sesi_akun.dart';
+import 'catatan_admin.dart';
 
-class Pengaturan extends StatelessWidget {
+class Pengaturan extends StatefulWidget {
   const Pengaturan({super.key});
 
-  void ujiRouteTidakDikenal(BuildContext context) {
-    Navigator.pushNamed(context, '/route-salah');
+  @override
+  State<Pengaturan> createState() => _PengaturanState();
+}
+
+class _PengaturanState extends State<Pengaturan> {
+  bool _menyimpanTema = false;
+
+  Future<void> _ubahTema(bool aktif) async {
+    if (_menyimpanTema) return;
+
+    setState(() => _menyimpanTema = true);
+
+    try {
+      await context.read<ThemeCubit>().ubahModeGelap(aktif);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Pilihan tema berhasil disimpan.')),
+        );
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Tema belum berhasil disimpan. Silakan coba kembali.',
+            ),
+          ),
+        );
+    } finally {
+      if (mounted) {
+        setState(() => _menyimpanTema = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final akun = SesiAkun.aktif;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Pengaturan')),
       body: ListView(
@@ -28,23 +69,38 @@ class Pengaturan extends StatelessWidget {
                       : Icons.light_mode_outlined,
                 ),
                 value: modeGelap,
-                onChanged: (aktif) {
-                  context.read<ThemeCubit>().ubahModeGelap(aktif);
-                },
+                onChanged: _menyimpanTema ? null : _ubahTema,
                 title: const Text('Mode gelap'),
-                subtitle: const Text(
-                  'Gunakan tampilan gelap pada seluruh aplikasi.',
+                subtitle: Text(
+                  _menyimpanTema
+                      ? 'Menyimpan pilihan tema...'
+                      : 'Pilihan tema tersimpan pada perangkat ini.',
                 ),
               );
             },
           ),
           const Divider(),
-          SwitchListTile(
-            value: true,
-            onChanged: (_) {},
-            title: const Text('Notifikasi Laporan'),
-            subtitle: const Text('Terima informasi mengenai status laporan.'),
-          ),
+          if (akun != null && akun.peran == PeranAkun.admin) ...[
+            ListTile(
+              key: const ValueKey('buka-catatan-admin'),
+              leading: const Icon(Icons.note_alt_outlined),
+              title: const Text('Catatan kerja admin'),
+              subtitle: const Text(
+                'Simpan dan baca catatan kerja pada perangkat ini.',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _menyimpanTema
+                  ? null
+                  : () {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (_) => HalamanCatatanAdmin(idAdmin: akun.id),
+                        ),
+                      );
+                    },
+            ),
+            const Divider(),
+          ],
           const ListTile(
             leading: Icon(Icons.language),
             title: Text('Bahasa'),
@@ -52,8 +108,11 @@ class Pengaturan extends StatelessWidget {
           ),
           const ListTile(
             leading: Icon(Icons.location_city),
-            title: Text('Wilayah'),
-            subtitle: Text('Kota Bandung'),
+            title: Text('Wilayah layanan'),
+            subtitle: Text(
+              'Kota Bandung, Kabupaten Bandung, '
+              'dan Kabupaten Bandung Barat.',
+            ),
           ),
           const Divider(),
           ListTile(
@@ -64,7 +123,7 @@ class Pengaturan extends StatelessWidget {
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              ujiRouteTidakDikenal(context);
+              Navigator.pushNamed(context, '/route-salah');
             },
           ),
         ],
